@@ -1,0 +1,132 @@
+---
+title: "Counting cell change between different scenarios"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(sf)
+library(here)
+library(tidyverse)
+library(janitor)
+library(stars)
+```
+```{r}
+# # read in raster for 2020
+
+scenario_raster_scenario1_2020 <-  read_stars(here("data", "cwhr_MIROC5_85_Scenario1_v3_20210824_1050_0.tif"))
+
+#vectorize raster to be able to perform the habitat quality table fix
+scenario_vector_scenario1_2020 <- st_as_sf(scenario_raster_scenario1_2020[1], merge = FALSE, as_points = F)
+#set crs to NAD83 UTM zone 10
+st_crs(scenario_vector_scenario1_2020) <- 3717
+#set column names to grid code and geometry
+colnames(scenario_vector_scenario1_2020) <- c("gridcode", "geometry")
+```
+
+```{r}
+#read in raster for 2040
+scenario_raster_scenario1_2040 <-  read_stars(here("data", "cwhr_MIROC5_85_Scenario1_v3_20210824_1050_20.tif"))
+
+#vectorize raster to be able to perform the habitat quality table fix
+scenario_vector_scenario1_2040 <- st_as_sf(scenario_raster_scenario1_2040[1], merge = FALSE, as_points = F)
+#set crs to NAD83 UTM zone 10
+st_crs(scenario_vector_scenario1_2040) <- 3717
+#set column names to grid code and geometry
+colnames(scenario_vector_scenario1_2040) <- c("gridcode", "geometry")
+
+#take the difference between the two 
+difference<- scenario_vector_scenario1_2040$gridcode - scenario_vector_scenario1_2020$gridcode
+#create data frame
+difference_dataframe <- as.data.frame(difference) 
+#find the number of cells that have changed
+different_cells <- difference_dataframe %>% 
+  filter(difference > 0)
+
+nrow(different_cells)
+```
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+#select specific columns to make it easier to manage
+lulc_select <- scenario_vector
+
+lulc_sep <- lulc_select %>% 
+  mutate(last_2 = lulc_select$gridcode %% 100) %>%
+  mutate(first_two = substr(lulc_select$gridcode, 1, nchar(lulc_select$gridcode)-2 )) 
+#separate the number in the gridcode to create new columns
+lulc_sep <- lulc_sep %>% 
+  mutate(second_last = substr(lulc_sep$last_2, 1, 1) ) %>% 
+  mutate(first_last = lulc_select$gridcode %% 10) %>% 
+  mutate(forest_type = first_two) %>% 
+  mutate(seral_stage = second_last) %>% 
+  mutate(canopy_cover = first_last) %>% 
+  mutate(ecoregion_type = as.numeric(forest_type))
+
+#make no values into 0 (should this be NA instead? It shows 0 as no values on the document, so I'm assuming this is ok)
+lulc_sep$first_two[lulc_sep$first_two == ""] <- 0
+lulc_sep$forest_type[lulc_sep$forest_type == ""] <- 0
+
+#rename based on the document by TNC: Forest Type
+lulc_sep$forest_type[lulc_sep$forest_type == 0] <- "non-forested"
+lulc_sep$forest_type[lulc_sep$forest_type == 1] <- "aspen"
+lulc_sep$forest_type[lulc_sep$forest_type == 2] <- "montane_hardwood"
+lulc_sep$forest_type[lulc_sep$forest_type == 3] <- "montane_riparian"
+lulc_sep$forest_type[lulc_sep$forest_type == 4] <- "white_fir"
+lulc_sep$forest_type[lulc_sep$forest_type == 5] <- "red_fir"
+lulc_sep$forest_type[lulc_sep$forest_type == 6] <- "jeffrey_pine"
+lulc_sep$forest_type[lulc_sep$forest_type == 7] <- "ponderosa_pine"
+lulc_sep$forest_type[lulc_sep$forest_type == 8] <- "douglas-fir"
+lulc_sep$forest_type[lulc_sep$forest_type == 9] <- "mixed_hardwood_conifer"
+lulc_sep$forest_type[lulc_sep$forest_type == 10] <- "lodgepole_pine"
+lulc_sep$forest_type[lulc_sep$forest_type == 11] <- "sierra_mixed_conifer"
+lulc_sep$forest_type[lulc_sep$forest_type == 12] <- "sierra_high_elevation_mixed_conifer"
+lulc_sep$forest_type[lulc_sep$forest_type == 13] <- "juniper"
+lulc_sep$forest_type[lulc_sep$forest_type == 14] <- "chapparal"
+
+#rename based on the document by TNC: Seral Stage
+lulc_sep$seral_stage[lulc_sep$seral_stage == 0] <- "NA"
+lulc_sep$seral_stage[lulc_sep$seral_stage == 1] <- "below_1"
+lulc_sep$seral_stage[lulc_sep$seral_stage == 2] <- "1-6"
+lulc_sep$seral_stage[lulc_sep$seral_stage == 3] <- "6-11"
+lulc_sep$seral_stage[lulc_sep$seral_stage == 4] <- "11-24"
+lulc_sep$seral_stage[lulc_sep$seral_stage == 5] <- "above_24"
+
+#rename based on the document by TNC: canopy cover
+lulc_sep$canopy_cover[lulc_sep$canopy_cover == 0] <- "0-10"
+lulc_sep$canopy_cover[lulc_sep$canopy_cover == 1] <- "10-25"
+lulc_sep$canopy_cover[lulc_sep$canopy_cover == 2] <- "25-40"
+lulc_sep$canopy_cover[lulc_sep$canopy_cover == 3] <- "40-60"
+lulc_sep$canopy_cover[lulc_sep$canopy_cover == 4] <- "60-100"
+
+#reclassify ecoregion_type as non-forest, hardwoods, conifer, or mixed     
+
+lulc_sep$ecoregion_type[lulc_sep$ecoregion_type == 0 ] <- "non-forest" 
+
+lulc_sep$ecoregion_type[lulc_sep$ecoregion_type== 14] <- "shrub"
+
+lulc_sep$ecoregion_type[lulc_sep$ecoregion_type == 1|lulc_sep$ecoregion_type == 2] <- "hardwoods" 
+
+lulc_sep$ecoregion_type[lulc_sep$ecoregion_type == 4|lulc_sep$ecoregion_type ==5|lulc_sep$ecoregion_type ==6|lulc_sep$ecoregion_type ==7|lulc_sep$ecoregion_type 
+                        ==8|lulc_sep$ecoregion_type ==10|lulc_sep$ecoregion_type ==11|lulc_sep$ecoregion_type ==12|lulc_sep$ecoregion_type == 13] <- "conifer" 
+
+lulc_sep$ecoregion_type[lulc_sep$ecoregion_type == 9 | lulc_sep$ecoregion_type == 3] <- "mixed"
+
+
+#select the specific columns I want and then merge them to form a new data set with all desired columns
+forest_features <- lulc_sep %>% 
+  select(forest_type, seral_stage, canopy_cover, ecoregion_type, geometry)
+  
+```
+
